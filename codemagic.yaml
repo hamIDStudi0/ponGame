@@ -20,14 +20,14 @@ workflows:
           mkdir -p /tmp/godot
           cd /tmp/godot
           
-          # Menggunakan -o untuk mendefinisikan nama file secara manual agar tidak eror kosong
-          curl -L -o "Godot_v4.3-stable_macos.universal.zip" "https://tuxfamily.org"
+          # Unduh kembali dari GitHub resmi menggunakan parameter -fSL agar mengikut pengalihan file asli
+          curl -fSL -o "Godot_v4.3-stable_macos.universal.zip" "https://github.com"
           unzip -q "Godot_v4.3-stable_macos.universal.zip"
           
           sudo ln -sf "$(pwd)/Godot.app/Contents/MacOS/Godot" /usr/local/bin/godot
           
           mkdir -p ~/Library/Application\ Support/Godot/export_templates
-          curl -L -o "Godot_v4.3-stable_export_templates.tpz" "https://tuxfamily.org"
+          curl -fSL -o "Godot_v4.3-stable_export_templates.tpz" "https://github.com"
           unzip -q "Godot_v4.3-stable_export_templates.tpz"
           mv templates ~/Library/Application\ Support/Godot/export_templates/4.3.stable
 
