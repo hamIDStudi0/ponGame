@@ -1,20 +1,34 @@
 extends Node
 class_name AIPaddleBrain
-## Menjembatani dunia game (posisi bola & paddle) dengan otak QLearning.
-## Pasang sebagai child dari paddle (CharacterBody2D, biasanya PaddleScript
-## dengan player_id = 0), lalu panggil notify_hit() / notify_goal() dari
-## PongBase saat event terjadi supaya reward/punishment beneran dihitung.
+## Menjembatani dunia game (posisi bola & paddle) dengan otak QLearning (DQN
+## mini). Pasang sebagai child dari paddle (CharacterBody2D, biasanya
+## PaddleScript dengan player_id = 0), lalu panggil notify_hit() /
+## notify_goal() dari PongBase saat event terjadi supaya reward/punishment
+## beneran dihitung.
+##
+## State yang dikirim ke DQN sekarang berupa VEKTOR ANGKA (6 fitur), bukan
+## string bucket seperti Q-table lama:
+##   [0] dy_norm         -> posisi vertikal bola relatif ke paddle (-1..1)
+##   [1] approaching     -> apakah bola sedang menuju paddle ini (0/1)
+##   [2] vy_sign         -> arah vertikal bola (-1/0/1)
+##   [3] dist_norm       -> jarak horizontal bola ke paddle (0..1)
+##   [4] speed_norm      -> KECEPATAN bola saat ini (0..1) -- prinsip akselerasi:
+##                          makin cepat bola, makin AI harus bersiap lebih awal
+##   [5] predicted_dy_norm -> PREDIKSI posisi Y bola nanti saat sampai di garis
+##                          paddle ini, dengan mensimulasikan pantulan dinding
+##                          atas/bawah (prinsip posisi pantulan)
 
 @export var paddle_side: int = -1   # -1 kalau paddle ini di kiri layar, 1 kalau di kanan
 @export var move_speed: float = 250.0
 @export var devil_speed_multiplier: float = 1.35 # AI jadi lebih cepat & tajam pas mode iblis
 @export var dead_zone_px: float = 6.0
+@export var reference_max_ball_speed: float = 620.0 # samakan dengan BallScript.max_speed
 
 var paddle: CharacterBody2D
 var field_top: float = 20.0
 var field_bottom: float = 340.0
 
-var _last_state: String = ""
+var _last_state: Array = []
 var _last_action: int = QLearning.ACTION_STAY
 var _pending_reward: float = 0.0
 var _has_last_state: bool = false
@@ -34,17 +48,18 @@ func _physics_process(delta: float) -> void:
 	var state := _encode_state(ball)
 
 	# --- Reward shaping tiap tick: hukuman kecil kalau posisi paddle jauh dari ---
-	# --- garis lintasan bola SAAT bola sedang mendekat (bukan pas menjauh). ---
+	# --- prediksi titik pantulan bola SAAT bola sedang mendekat (bukan pas menjauh). ---
 	var approaching := _is_approaching(ball)
 	var step_reward := 0.0
 	if approaching:
-		var dy := ball.position.y - paddle.position.y
+		var predicted_y := _predict_intercept_y(ball)
+		var dy := predicted_y - paddle.position.y
 		step_reward = -clamp(abs(dy) / 300.0, 0.0, 1.0) * 0.05
 	step_reward += _pending_reward
 	_pending_reward = 0.0
 
 	if _has_last_state:
-		QLearning.learn(_last_state, _last_action, step_reward, state)
+		QLearning.learn(_last_state, _last_action, step_reward, state, false)
 
 	var action := QLearning.choose_action(state)
 	_last_state = state
@@ -71,8 +86,13 @@ func notify_hit() -> void:
 	_pending_reward += 3.0 # hadiah
 
 ## Dipanggil dari luar saat terjadi gol. won = true kalau AI yg mencetak.
+## Rally berakhir di sini (done=true) -- state Bellman tidak menjalar lewat
+## batas rally, cocok dengan gaya episodic RL.
 func notify_goal(won: bool) -> void:
 	_pending_reward += (5.0 if won else -5.0) # hadiah besar / hukuman
+	if _has_last_state:
+		QLearning.learn(_last_state, _last_action, _pending_reward, _last_state, true)
+	_pending_reward = 0.0
 	QLearning.end_episode(won)
 	_has_last_state = false # rally baru = state lama tidak relevan lagi
 
@@ -97,15 +117,34 @@ func _is_approaching(ball: CharacterBody2D) -> bool:
 	var vx: float = ball.velocity.x
 	return (paddle_side < 0 and vx < 0) or (paddle_side > 0 and vx > 0)
 
-## Meringkas kondisi permainan jadi sebuah state key diskrit untuk Q-table.
-## dy_bucket   : posisi vertikal bola relatif ke paddle (dibagi 15px per bucket)
-## approaching : apakah bola sedang menuju ke arah paddle ini (0/1)
-## vy_sign     : arah vertikal bola (-1/0/1)
-## dist_bucket : seberapa jauh bola secara horizontal (0..5)
-func _encode_state(ball: CharacterBody2D) -> String:
-	var dy := ball.position.y - paddle.position.y
-	var dy_bucket := clampi(int(round(dy / 15.0)), -12, 12)
-	var approaching := 1 if _is_approaching(ball) else 0
-	var vy_sign := int(sign(ball.velocity.y))
-	var dist_bucket := clampi(int(abs(ball.position.x - paddle.position.x) / 100.0), 0, 5)
-	return "%d|%d|%d|%d" % [dy_bucket, approaching, vy_sign, dist_bucket]
+## Mensimulasikan lintasan lurus bola + pantulan dinding atas/bawah lapangan
+## untuk memprediksi di posisi Y berapa bola akan tiba saat mencapai garis
+## horizontal paddle ini. Ini "prinsip posisi pantulan" yang diminta --
+## murah secara komputasi (cuma aljabar, tanpa loop simulasi tiap frame).
+func _predict_intercept_y(ball: CharacterBody2D) -> float:
+	if abs(ball.velocity.x) < 1.0:
+		return ball.position.y
+	var dist_x: float = paddle.position.x - ball.position.x
+	var t: float = dist_x / ball.velocity.x
+	if t < 0.0:
+		return ball.position.y # bola sudah lewat / menjauh, prediksi tidak relevan
+	var raw_y: float = ball.position.y + ball.velocity.y * t
+	var span: float = max(field_bottom - field_top, 1.0)
+	# "Lipat" y ke rentang [field_top, field_bottom] ala pantulan cermin berulang.
+	var rel: float = fmod(raw_y - field_top, 2.0 * span)
+	if rel < 0.0:
+		rel += 2.0 * span
+	if rel > span:
+		rel = 2.0 * span - rel
+	return field_top + rel
+
+## Meringkas kondisi permainan jadi vektor 6-angka untuk DQN.
+func _encode_state(ball: CharacterBody2D) -> Array:
+	var dy_norm := clamp((ball.position.y - paddle.position.y) / 300.0, -1.0, 1.0)
+	var approaching := 1.0 if _is_approaching(ball) else 0.0
+	var vy_sign := float(sign(ball.velocity.y))
+	var dist_norm := clamp(abs(ball.position.x - paddle.position.x) / 640.0, 0.0, 1.0)
+	var speed_norm := clamp(ball.velocity.length() / reference_max_ball_speed, 0.0, 1.0)
+	var predicted_y := _predict_intercept_y(ball)
+	var predicted_dy_norm := clamp((predicted_y - paddle.position.y) / 300.0, -1.0, 1.0)
+	return [dy_norm, approaching, vy_sign, dist_norm, speed_norm, predicted_dy_norm]

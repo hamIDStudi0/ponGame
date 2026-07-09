@@ -2,21 +2,25 @@ extends RefCounted
 class_name StoryData
 ## Semua baris cerita ponGame, urut sesuai dokumen desain.
 ## "event" dipakai Story.gd untuk memicu animasi/visual yang sesuai baris itu.
+## Format event boleh punya beberapa bagian dipisah ":" -> "key:label:detail"
 ## Event yang tersedia:
+##   code_typing_intro   -> animasi mengetik kode Python singkat (model belajar
+##                          dari kesalahan), lalu bermetamorfosis jadi lingkaran biru bercahaya
 ##   camera_ai         -> kamera fokus ke lingkaran biru / paddle AI
 ##   camera_player      -> kamera fokus ke paddle player
 ##   camera_wide        -> kamera zoom out lihat lapangan
-##   circle_spawn        -> lingkaran kekuatan biru muncul
 ##   circle_enter_paddle -> lingkaran masuk ke batang pong jadi milik AI
 ##   player_paddle_spawn -> paddle player muncul + antena
 ##   match_start          -> permainan pong dimulai
-##   spawn_data_node       -> memunculkan file data_0000000X baru di folder "Machine Learning"
-##   open_data_form_network -> data dibuka & membentuk node yang saling terhubung
+##   spawn_data_node:label:detail       -> memunculkan file data_0000000X baru di folder
+##                          "Machine Learning", dengan keterangan singkat isi datanya
+##                          (reward/punishment & posisi) di bawah label
+##   open_data_form_network:label:detail -> data dibuka & membentuk node yang saling terhubung
 ##   ai_power_up            -> overlay opacity rendah seperti "roh" masuk ke batang AI (AI jadi kuat)
 ##   ai_corrupt_takeover     -> shading merah gelap, AI mengambil alih narasi
 
 const LINES := [
-	{ "speaker": "Narator", "text": "Di suatu ruang kosong, sebuah lingkaran kekuatan berwarna biru muncul perlahan.", "event": "circle_spawn" },
+	{ "speaker": "Narator", "text": "Di suatu ruang kosong, sebaris kode mulai diketik sendiri, lalu berubah menjadi lingkaran kekuatan berwarna biru yang muncul perlahan.", "event": "code_typing_intro" },
 	{ "speaker": "Narator", "text": "Ia belum diberikan pelajaran apapun. Ia hanya sebuah potensi.", "event": "camera_ai" },
 	{ "speaker": "Narator", "text": "Lingkaran itu bergerak, masuk ke dalam mekanisme batang pong di sisi kiri.", "event": "circle_enter_paddle" },
 	{ "speaker": "Narator", "text": "Batang itu kini menjadi miliknya. Sebuah antena kecil muncul di belakangnya.", "event": "camera_ai" },
@@ -24,12 +28,12 @@ const LINES := [
 	{ "speaker": "Narator", "text": "Permainan dimulai.", "event": "match_start" },
 	{ "speaker": "Narator", "text": "Ia adalah Machine Learning.", "event": "camera_wide" },
 
-	{ "speaker": "Narator", "text": "Dia mempelajari setiap kesalahan maupun kemenangan untuk di analisa.", "event": "spawn_data_node:data_00000001" },
-	{ "speaker": "Narator", "text": "Dia menghitung setiap data yang ia ambil dengan bobot.", "event": "open_data_form_network:data_00000002" },
-	{ "speaker": "Narator", "text": "Dia juga mampu beradaptasi dengan memperhitungkan berdasarkan data yang dimiliki.", "event": "open_data_form_network:data_00000003" },
-	{ "speaker": "Narator", "text": "Dia mengambil pola yang diterima dan mengira berdasarkan algoritma untuk mencapai sesuatu dengan tepat.", "event": "open_data_form_network:data_00000004" },
-	{ "speaker": "Narator", "text": "Dia menguji beberapa kemungkinan dan menerima kegagalan sebagai pengalamannya.", "event": "open_data_form_network:data_00000005" },
-	{ "speaker": "Narator", "text": "Dia menjadi kuat secara perlahan tanpa terburu-buru, dengan berlatih dan bekerja keras.", "event": "open_data_form_network:data_00000006" },
+	{ "speaker": "Narator", "text": "Dia mempelajari setiap kesalahan maupun kemenangan untuk di analisa.", "event": "spawn_data_node:data_00000001:reward +3 @ pantulan berhasil" },
+	{ "speaker": "Narator", "text": "Dia menghitung setiap data yang ia ambil dengan bobot.", "event": "open_data_form_network:data_00000002:bobot diperbarui (lr=0.05)" },
+	{ "speaker": "Narator", "text": "Dia juga mampu beradaptasi dengan memperhitungkan berdasarkan data yang dimiliki.", "event": "open_data_form_network:data_00000003:state baru dikenali & disimpan" },
+	{ "speaker": "Narator", "text": "Dia mengambil pola yang diterima dan mengira berdasarkan algoritma untuk mencapai sesuatu dengan tepat.", "event": "open_data_form_network:data_00000004:prediksi posisi pantulan bola" },
+	{ "speaker": "Narator", "text": "Dia menguji beberapa kemungkinan dan menerima kegagalan sebagai pengalamannya.", "event": "open_data_form_network:data_00000005:punishment -5 @ gagal pantulkan" },
+	{ "speaker": "Narator", "text": "Dia menjadi kuat secara perlahan tanpa terburu-buru, dengan berlatih dan bekerja keras.", "event": "open_data_form_network:data_00000006:epsilon menurun, makin percaya diri" },
 
 	{ "speaker": "Narator", "text": "Walaupun ia terlihat sempurna dalam segi data, namun tetap ia hanya sebuah mesin.", "event": "camera_ai" },
 	{ "speaker": "Narator", "text": "Yang memiliki sebuah kekurangan.", "event": "none" },

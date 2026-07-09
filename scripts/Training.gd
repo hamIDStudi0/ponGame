@@ -1,8 +1,13 @@
 extends PongBase
-## Fase "Latihan Serius": AI (paddle kiri) berlatih Q-learning melawan
-## SparringBot (bot heuristik, bukan ML) dengan waktu dipercepat, sambil
-## menampilkan fakta ML acak dan progress menuju "pintar". Q-table yang
-## dipelajari di sini AKAN dipakai juga saat mode "Lawan AI" (persisten).
+## Fase "Latihan Serius": AI (paddle kiri) berlatih DQN mini melawan
+## SparringBot (bot heuristik, bukan ML) dengan waktu simulasi dipercepat,
+## sambil menampilkan fakta ML acak dan progress menuju "pintar". Bobot
+## jaringan yang dipelajari di sini AKAN dipakai juga saat mode "Lawan AI"
+## (persisten, tersimpan di disk).
+##
+## Catatan waktu latihan: walau simulasi dipercepat lewat slider, progress
+## "menuju 4 jam latihan" (QLearning.tick_training_time) memakai waktu NYATA
+## (real-time), bukan waktu yang sudah dikali speed-up, biar jujur.
 
 @onready var quote_label: Label = %QuoteLabel
 @onready var stats_label: Label = %StatsLabel
@@ -35,12 +40,21 @@ func _process(delta: float) -> void:
 	if _quote_timer >= QUOTE_INTERVAL:
 		_quote_timer = 0.0
 		quote_label.text = MLQuotes.random_quote()
+
+	# Waktu latihan "menuju 4 jam" memakai delta NYATA (dibagi time_scale
+	# supaya tidak ikut dipercepat oleh slider) -- lihat catatan di atas.
+	var real_delta := delta / max(Engine.time_scale, 0.0001)
+	QLearning.tick_training_time(real_delta)
+
 	_update_hud()
 
 func _update_hud() -> void:
 	var s := QLearning.get_stats()
-	stats_label.text = "Episode: %d   Menang: %d   Kalah: %d   Winrate: %.0f%%   Epsilon: %.2f   Ukuran Q-table: %d" % [
-		s["episodes"], s["wins"], s["losses"], s["win_rate"] * 100.0, s["epsilon"], s["table_size"]
+	var jam := int(s["training_seconds"] / 3600.0)
+	var menit := int(fmod(s["training_seconds"], 3600.0) / 60.0)
+	stats_label.text = "Episode: %d   Menang: %d   Kalah: %d   Winrate: %.0f%%   Epsilon: %.2f   Replay buffer: %d\nWaktu latihan: %dj %dm menuju target 4 jam (%.0f%%)%s" % [
+		s["episodes"], s["wins"], s["losses"], s["win_rate"] * 100.0, s["epsilon"], s["table_size"],
+		jam, menit, s["training_progress"] * 100.0, "  [AI SUDAH MATANG]" if s["mature"] else ""
 	]
 	progress_bar.value = clamp(s["win_rate"] * 100.0, 0, 100)
 	if s["smart"]:

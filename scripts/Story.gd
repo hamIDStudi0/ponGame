@@ -17,11 +17,28 @@ const CAMERA_WIDE := Vector2(320, 180)
 var _line_index := 0
 var _node_positions: Array[Vector2] = []
 var _prev_node: Node2D = null
+var _glow_circle: PixelGlowCircle
+
+## --- Animasi intro "mengetik kode" ---
+## Potongan kode Python singkat yang menggambarkan inti dari Machine
+## Learning: belajar dari kesalahan lewat gradient descent. Sengaja pendek
+## supaya animasi ketiknya cepat & efisien (tidak memotong banyak waktu),
+## dengan sedikit pewarnaan sintaks (bbcode) biar terasa seperti editor kode.
+const CODE_SNIPPET_BBCODE := "[color=#7fd9ff]class[/color] [color=#bdeeff]Model[/color]:\n    [color=#7fd9ff]def[/color] [color=#9df2c2]fit[/color](self, mistake):\n        [color=#6b7b85]# belajar dari kesalahan[/color]\n        self.w [color=#ffb86b]-=[/color] lr [color=#ffb86b]*[/color] grad(mistake)\n        [color=#7fd9ff]return[/color] [color=#ffe08a]\"berhasil dipelajari\"[/color]"
+const CODE_TYPE_DURATION := 1.1
+const CODE_HOLD_DURATION := 0.25
+const CODE_MORPH_DURATION := 0.5
+
+var _code_label: RichTextLabel
 
 func _ready() -> void:
 	skip_button.pressed.connect(_skip_to_menu)
 	dialogue.line_finished.connect(_on_line_finished)
 	dialogue.advanced.connect(_advance_line)
+
+	_build_code_label()
+	_glow_circle = PixelGlowCircle.new()
+	ai_circle.add_child(_glow_circle)
 
 	# --- Resume otomatis dari save, story TIDAK reset walau keluar game ---
 	_line_index = SaveManager.get_story_index()
@@ -66,7 +83,10 @@ func _run_event(event: String) -> void:
 	var parts := event.split(":")
 	var key := parts[0]
 	match key:
-		"circle_spawn":
+		"code_typing_intro":
+			_move_camera_to(CAMERA_WIDE)
+			_play_code_typing_intro()
+		"circle_spawn": # dipertahankan untuk kompatibilitas kalau dipanggil manual
 			_move_camera_to(CAMERA_WIDE)
 			_fade_in(ai_circle, 1.0)
 		"camera_ai":
@@ -91,10 +111,12 @@ func _run_event(event: String) -> void:
 			_move_camera_to(CAMERA_WIDE)
 		"spawn_data_node":
 			var label := parts[1] if parts.size() > 1 else "data_%08d" % SaveManager.unlock_next_data_node()
-			_spawn_data_node(label, false)
+			var detail := parts[2] if parts.size() > 2 else ""
+			_spawn_data_node(label, false, detail)
 		"open_data_form_network":
 			var label2 := parts[1] if parts.size() > 1 else "data_%08d" % SaveManager.unlock_next_data_node()
-			_spawn_data_node(label2, true)
+			var detail2 := parts[2] if parts.size() > 2 else ""
+			_spawn_data_node(label2, true, detail2)
 		"ai_power_up":
 			_move_camera_to(CAMERA_AI)
 			var tw2 := create_tween()
@@ -109,9 +131,45 @@ func _run_event(event: String) -> void:
 		_:
 			pass
 
+## ---------------------------------------------------------------------
+## Intro "mengetik kode": menampilkan potongan kode Python singkat (model
+## belajar dari kesalahan) yang diketik cepat & efisien (satu Tween pada
+## visible_ratio -- BUKAN loop per-karakter, jadi murah secara CPU), lalu
+## bermetamorfosis (cross-fade + scale pop) menjadi lingkaran biru bercahaya.
+## ---------------------------------------------------------------------
+func _build_code_label() -> void:
+	_code_label = RichTextLabel.new()
+	_code_label.bbcode_enabled = true
+	_code_label.fit_content = true
+	_code_label.scroll_active = false
+	_code_label.modulate.a = 0.0
+	_code_label.visible_ratio = 0.0
+	_code_label.add_theme_font_size_override("normal_font_size", 12)
+	_code_label.position = Vector2(170, 90)
+	_code_label.size = Vector2(300, 130)
+	_code_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_code_label.text = CODE_SNIPPET_BBCODE
+	add_child(_code_label)
+
+func _play_code_typing_intro() -> void:
+	_code_label.visible_ratio = 0.0
+	ai_circle.modulate.a = 0.0
+	ai_circle.scale = Vector2(0.4, 0.4)
+
+	var tw := create_tween()
+	tw.tween_property(_code_label, "modulate:a", 1.0, 0.15) # kode langsung muncul, cepat
+	tw.tween_property(_code_label, "visible_ratio", 1.0, CODE_TYPE_DURATION).set_trans(Tween.TRANS_LINEAR)
+	tw.tween_interval(CODE_HOLD_DURATION) # jeda sebentar biar sempat "dibaca" sekilas
+	# --- Morph: kode memudar barengan lingkaran biru bercahaya muncul & "pop" ---
+	tw.tween_property(_code_label, "modulate:a", 0.0, CODE_MORPH_DURATION)
+	tw.parallel().tween_property(ai_circle, "modulate:a", 1.0, CODE_MORPH_DURATION)
+	tw.parallel().tween_property(ai_circle, "scale", Vector2(1.0, 1.0), CODE_MORPH_DURATION).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
 ## Menambahkan visual "file data" baru yang muncul di area folder Machine Learning,
-## dan kalau connect=true akan digambar garis penghubung antar node (jaringan saraf sederhana).
-func _spawn_data_node(label_text: String, connect: bool) -> void:
+## kalau connect=true akan digambar garis penghubung antar node (jaringan saraf sederhana),
+## dan detail_text (kalau ada) menampilkan sekilas isi "dalaman" data itu -- misalnya
+## reward/punishment yang diterima & di posisi/kondisi apa itu terjadi.
+func _spawn_data_node(label_text: String, connect: bool, detail_text: String = "") -> void:
 	var node := ColorRect.new()
 	node.color = Color(0.3, 0.9, 0.6)
 	node.size = Vector2(10, 10)
@@ -132,6 +190,17 @@ func _spawn_data_node(label_text: String, connect: bool) -> void:
 	tw.tween_property(node, "modulate:a", 1.0, 0.4)
 	tw.parallel().tween_property(lbl, "modulate:a", 1.0, 0.4)
 
+	if detail_text != "":
+		var detail_lbl := Label.new()
+		detail_lbl.text = detail_text
+		detail_lbl.add_theme_font_size_override("font_size", 7)
+		detail_lbl.modulate = Color(0.75, 0.95, 0.85, 0.0)
+		detail_lbl.position = Vector2(pos.x - 4, pos.y + 22)
+		data_layer.add_child(detail_lbl)
+		var tw_detail := create_tween()
+		tw_detail.tween_interval(0.3) # muncul sesaat setelah label utama, biar terbaca berurutan
+		tw_detail.tween_property(detail_lbl, "modulate:a", 0.9, 0.35)
+
 	if connect and _prev_node != null:
 		var line := Line2D.new()
 		line.width = 1.5
@@ -150,6 +219,7 @@ func _spawn_data_node(label_text: String, connect: bool) -> void:
 func _replay_visual_state_up_to(target_index: int) -> void:
 	if target_index <= 0:
 		return
+	_code_label.visible = false
 	ai_circle.visible = false
 	ai_paddle.modulate.a = 1.0
 	player_paddle.modulate.a = 1.0
@@ -159,7 +229,8 @@ func _replay_visual_state_up_to(target_index: int) -> void:
 		if ev.begins_with("spawn_data_node") or ev.begins_with("open_data_form_network"):
 			var parts := ev.split(":")
 			var label := parts[1] if parts.size() > 1 else "data_%08d" % (i + 1)
-			_spawn_data_node(label, ev.begins_with("open_data_form_network"))
+			var detail := parts[2] if parts.size() > 2 else ""
+			_spawn_data_node(label, ev.begins_with("open_data_form_network"), detail)
 		elif ev == "ai_corrupt_takeover":
 			corrupt_overlay.color.a = 0.35
 			ai_paddle.color = Color(0.8, 0.1, 0.15)

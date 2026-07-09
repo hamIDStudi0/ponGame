@@ -1,12 +1,22 @@
 extends PongBase
-## Mode "Lawan AI": paddle kiri 100% dikendalikan oleh QLearning (Q-table asli,
-## reward & punishment, lihat scripts/ai/QLearning.gd + AIPaddleBrain.gd).
-## AI TERUS belajar walau lagi lawan manusia (online learning) -- kalau kamu
-## sering menang, AI akan makin sering dihukum dan berubah strategi.
+## Mode "Lawan AI": paddle kiri 100% dikendalikan oleh QLearning (DQN mini,
+## reward & punishment sungguhan, lihat scripts/ai/QLearning.gd +
+## AIPaddleBrain.gd). AI TERUS belajar walau lagi lawan manusia (online
+## learning) -- kalau kamu sering menang, AI akan makin sering dihukum dan
+## berubah strategi.
 ##
-## Tombol "Menyerah" memicu event naratif: AI dianggap resmi "menguasai"
-## permainan (devil mode = full exploit + lebih cepat + aura merah + teks
-## "diretak"), sesuai desain: story ML jujur diiringi ML sungguhan.
+## Tombol "Menyerah" HANYA mengakhiri pertandingan (kembali ke menu) --
+## TIDAK LAGI memicu mode "iblis".
+##
+## Mode "iblis" (AI mengambil alih, aura merah, teks diretas) sekarang
+## dipicu murni oleh PERFORMA di dalam pertandingan itu sendiri:
+##   (a) Rally panjang: bola berhasil dipantulkan bolak-balik sebanyak
+##       RALLY_THRESHOLD kali (acak 10-20) tanpa ada yang kebobolan, ATAU
+##   (b) AI menang beruntun sebanyak STREAK_THRESHOLD poin (acak 7-10)
+##       tanpa kalah sekali pun.
+## Begitu salah satu kondisi mendekati ambang batas, efek gelap mulai
+## muncul SEDIKIT DEMI SEDIKIT (overlay makin pekat, warna paddle AI makin
+## gelap secara bertahap) baru benar-benar penuh saat ambang tercapai.
 
 @onready var surrender_button: Button = %SurrenderButton
 @onready var corrupt_overlay: ColorRect = %CorruptOverlay
@@ -14,8 +24,17 @@ extends PongBase
 @onready var stats_label: Label = %StatsLabel
 
 var _brain: AIPaddleBrain
-var _surrendered: bool = false
+var _devil_triggered: bool = false
 var _corrupt_timer: Timer
+
+## --- Pelacak pemicu mode iblis ---
+var _rally_hits: int = 0
+var _ai_win_streak: int = 0
+var _rally_threshold: int
+var _streak_threshold: int
+const OVERLAY_MAX_ALPHA := 0.4
+const AI_DARK_COLOR := Color(0.75, 0.08, 0.12)
+var _ai_base_color: Color
 
 const DEVIL_LINES := [
 	"AKU SUDAH MENGUASAI SELURUH DATA-MU.",
@@ -30,13 +49,19 @@ func _on_ready_extra() -> void:
 	left_paddle.add_child(_brain)
 	_brain.setup(left_paddle, left_paddle.field_top, left_paddle.field_bottom)
 
+	_rally_threshold = randi_range(10, 20)
+	_streak_threshold = randi_range(7, 10)
+
 	surrender_button.pressed.connect(_on_surrender_pressed)
 	corrupt_overlay.color.a = 0.0
 	corrupt_label.visible = false
+	var ai_sprite := left_paddle.get_node_or_null("Sprite") as ColorRect
+	_ai_base_color = ai_sprite.color if ai_sprite != null else Color(0.2, 0.65, 1.0)
 	QLearning.stats_updated.connect(_update_stats_label)
 	_update_stats_label()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	QLearning.tick_training_time(delta) # bermain lawan AI juga terhitung sebagai jam terbang belajarnya
 	_update_stats_label()
 
 func _update_stats_label() -> void:
@@ -44,36 +69,54 @@ func _update_stats_label() -> void:
 		return
 	var s := QLearning.get_stats()
 	var mode_txt := "IBLIS" if s["devil_mode"] else "belajar"
-	stats_label.text = "AI %s | episode:%d | menang:%d kalah:%d | winrate:%.0f%% | epsilon:%.2f" % [
-		mode_txt, s["episodes"], s["wins"], s["losses"], s["win_rate"] * 100.0, s["epsilon"]
+	stats_label.text = "AI %s | episode:%d | menang:%d kalah:%d | winrate:%.0f%% | epsilon:%.2f | rally:%d/%d | streak AI:%d/%d" % [
+		mode_txt, s["episodes"], s["wins"], s["losses"], s["win_rate"] * 100.0, s["epsilon"],
+		_rally_hits, _rally_threshold, _ai_win_streak, _streak_threshold
 	]
 
 func _on_hit_paddle(paddle: Node, _offset: float, _ball: BallScript) -> void:
 	if paddle == left_paddle:
 		_brain.notify_hit()
+	if not _devil_triggered:
+		_rally_hits += 1
+		_update_corruption_buildup()
 
 func _on_scored(side: String, ball: BallScript) -> void:
 	# side == "left"  -> bola lewat sisi kiri -> AI (kiri) KEBOBOLAN -> AI kalah rally ini
 	# side == "right" -> bola lewat sisi kanan -> player (kanan) kebobolan -> AI MENANG rally ini
 	_brain.notify_goal(side == "right")
+	if not _devil_triggered:
+		_rally_hits = 0
+		_ai_win_streak = (_ai_win_streak + 1) if side == "right" else 0
+		_update_corruption_buildup()
 	super._on_scored(side, ball)
 
-func _on_surrender_pressed() -> void:
-	if _surrendered:
-		return
-	_surrendered = true
-	surrender_button.disabled = true
-	surrender_button.text = "AI TELAH MENGAMBIL ALIH"
-	QLearning.set_devil_mode(true) # epsilon jadi 0 + AIPaddleBrain otomatis pakai devil_speed_multiplier
+## Menghitung seberapa dekat kita ke salah satu pemicu (0..1), lalu
+## menerapkan efek visual SECARA PROPORSIONAL (bertahap) -- baru memicu
+## transformasi penuh saat salah satu ambang benar-benar tercapai.
+func _update_corruption_buildup() -> void:
+	var rally_progress := float(_rally_hits) / float(_rally_threshold)
+	var streak_progress := float(_ai_win_streak) / float(_streak_threshold)
+	var progress: float = clamp(max(rally_progress, streak_progress), 0.0, 1.0)
 
-	var tw := create_tween()
-	tw.tween_property(corrupt_overlay, "color:a", 0.4, 1.4)
-	var ai_sprite := left_paddle.get_node("Sprite") as ColorRect
+	corrupt_overlay.color.a = progress * OVERLAY_MAX_ALPHA
+	var ai_sprite := left_paddle.get_node_or_null("Sprite") as ColorRect
 	if ai_sprite != null:
-		ai_sprite.color = Color(0.75, 0.08, 0.12)
+		ai_sprite.color = _ai_base_color.lerp(AI_DARK_COLOR, progress)
 
+	if progress >= 1.0 and not _devil_triggered:
+		_trigger_devil_mode()
+
+func _trigger_devil_mode() -> void:
+	_devil_triggered = true
+	QLearning.set_devil_mode(true) # epsilon jadi 0 + AIPaddleBrain otomatis pakai devil_speed_multiplier
 	_shake_screen()
 	_start_corrupt_text()
+
+func _on_surrender_pressed() -> void:
+	# Sekadar menyerah/keluar dari pertandingan -- tidak lagi berdampak
+	# apapun ke mode iblis (itu sekarang murni soal performa di lapangan).
+	get_tree().change_scene_to_file("res://scenes/LocalMenu.tscn")
 
 func _shake_screen() -> void:
 	var original := position
