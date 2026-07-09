@@ -10,10 +10,10 @@ workflows:
         GODOT_VERSION: "4.3"
       java: 17
       triggering:
-      events:
-        - push
-      when:
-        branch: main
+        events:
+         - push
+        when:
+          branch: main
     scripts:
       - name: Setup Android SDK Dependencies
         script: |
