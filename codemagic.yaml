@@ -9,11 +9,11 @@ workflows:
       vars:
         GODOT_VERSION: "4.3"
       java: 17
-    triggering:
+      triggering:
       events:
         - push
-      branches:
-        - main
+      when:
+        branch: main
     scripts:
       - name: Setup Android SDK Dependencies
         script: |
@@ -46,7 +46,6 @@ workflows:
 
           # SUNTIKKAN PENGATURAN RELEASE KE FILE export_presets.cfg
           if [ -f export_presets.cfg ]; then
-            # Menghapus tanda centang debug dan mengarahkan ke Release Keystore
             sed -i 's|keystore/release=".*"|keystore/release="'$HOME'/release.keystore"|g' export_presets.cfg
             sed -i 's|keystore/release_user=".*"|keystore/release_user="ponkey"|g' export_presets.cfg
             sed -i 's|keystore/release_password=".*"|keystore/release_password="hamidstudio123"|g' export_presets.cfg
@@ -62,7 +61,6 @@ workflows:
       - name: Export Android APK (Release Mode)
         script: |
           mkdir -p build/android
-          # Menggunakan perintah --export-release untuk optimasi performa penuh
           godot --headless --path . --export-release "Android" build/android/ponGame-release.apk
 
     artifacts:
