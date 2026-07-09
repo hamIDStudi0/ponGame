@@ -2,7 +2,7 @@ workflows:
   godot-android-build:
     name: Build ponGame Android APK (Release)
     max_build_duration: 15
-    instance_type: linux_x2
+    instance_type: mac_mini_m2
     environment:
       groups:
         - android_credentials
