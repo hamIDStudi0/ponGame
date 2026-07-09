@@ -12,9 +12,9 @@ workflows:
     triggering:
       events:
         - push
-      when:
-        any:
-          - branch: main
+      branch_patterns:
+        - pattern: 'main'
+
     scripts:
       - name: Setup Android SDK Dependencies
         script: |
