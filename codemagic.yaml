@@ -7,7 +7,6 @@ workflows:
       groups:
         - android_credentials
       vars:
-        GODOT_VERSION: "4.3"
         # Mengarahkan langsung ke lokasi Android SDK bawaan Mac Codemagic
         ANDROID_HOME: "/usr/local/share/android-sdk"
     triggering:
@@ -22,18 +21,18 @@ workflows:
           mkdir -p /tmp/godot
           cd /tmp/godot
           
-          # Unduh Godot versi Mac
-          curl -LO "https://github.com{GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_macos.universal.zip"
-          unzip -q "Godot_v${GODOT_VERSION}-stable_macos.universal.zip"
+          # Unduh Godot versi Mac (Menulis manual angka 4.3 dan menambah fitur --retry jika internet putus)
+          curl --retry 5 --retry-delay 5 -LO "https://github.com"
+          unzip -q "Godot_v4.3-stable_macos.universal.zip"
           
           # Buat shortcut agar perintah 'godot' bisa dipanggil di terminal Mac
           sudo ln -sf "$(pwd)/Godot.app/Contents/MacOS/Godot" /usr/local/bin/godot
           
           # Unduh Export Templates agar Godot bisa membuat APK Android
           mkdir -p ~/Library/Application\ Support/Godot/export_templates
-          curl -LO "https://github.com{GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
-          unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
-          mv templates ~/Library/Application\ Support/Godot/export_templates/${GODOT_VERSION}.stable
+          curl --retry 5 --retry-delay 5 -LO "https://github.com"
+          unzip -q "Godot_v4.3-stable_export_templates.tpz"
+          mv templates ~/Library/Application\ Support/Godot/export_templates/4.3.stable
 
       - name: Configure Release Keystore and Injection
         script: |
