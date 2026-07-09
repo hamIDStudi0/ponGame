@@ -2,18 +2,19 @@ workflows:
   godot-android-build:
     name: Build ponGame Android APK (Release)
     max_build_duration: 15
-    instance_type: linux_x2  # Menggunakan server Linux instan yang cepat
+    instance_type: linux_x2
     environment:
       groups:
         - android_credentials
       vars:
         GODOT_VERSION: "4.3"
       java: 17
-      triggering:
-        events:
-         - push
-        when:
-          branch: main
+    triggering:
+      events:
+        - push
+      when:
+        branch: main
+
     scripts:
       - name: Setup Android SDK Dependencies
         script: |
