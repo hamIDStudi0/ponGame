@@ -13,8 +13,8 @@ workflows:
       events:
         - push
       when:
-        branch: main
-
+        any:
+          - branch: main
     scripts:
       - name: Setup Android SDK Dependencies
         script: |
