@@ -2,12 +2,11 @@ workflows:
   godot-android-build:
     name: Build ponGame Android APK (Release on Mac)
     max_build_duration: 15
-    instance_type: mac_mini_m2  # Akun gratis (500 menit/bulan)
+    instance_type: mac_mini_m2
     environment:
       groups:
         - android_credentials
       vars:
-        # Mengarahkan langsung ke lokasi Android SDK bawaan Mac Codemagic
         ANDROID_HOME: "/usr/local/share/android-sdk"
     triggering:
       events:
@@ -21,16 +20,14 @@ workflows:
           mkdir -p /tmp/godot
           cd /tmp/godot
           
-          # Unduh Godot versi Mac (Menulis manual angka 4.3 dan menambah fitur --retry jika internet putus)
-          curl --retry 5 --retry-delay 5 -LO "https://github.com"
+          # Menggunakan -o untuk mendefinisikan nama file secara manual agar tidak eror kosong
+          curl -L -o "Godot_v4.3-stable_macos.universal.zip" "https://tuxfamily.org"
           unzip -q "Godot_v4.3-stable_macos.universal.zip"
           
-          # Buat shortcut agar perintah 'godot' bisa dipanggil di terminal Mac
           sudo ln -sf "$(pwd)/Godot.app/Contents/MacOS/Godot" /usr/local/bin/godot
           
-          # Unduh Export Templates agar Godot bisa membuat APK Android
           mkdir -p ~/Library/Application\ Support/Godot/export_templates
-          curl --retry 5 --retry-delay 5 -LO "https://github.com"
+          curl -L -o "Godot_v4.3-stable_export_templates.tpz" "https://tuxfamily.org"
           unzip -q "Godot_v4.3-stable_export_templates.tpz"
           mv templates ~/Library/Application\ Support/Godot/export_templates/4.3.stable
 
@@ -38,18 +35,16 @@ workflows:
         script: |
           mkdir -p ~/Library/Application\ Support/Godot
           
-          # Membuat kunci enkripsi APK rilis otomatis di server Mac Codemagic
           keytool -genkey -v -keystore ~/release.keystore -storepass hamidstudio123 -alias ponkey \
             -keypass hamidstudio123 -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=hamIDStudio,O=hamIDStudio,C=ID"
 
-          # SUNTIKKAN PENGATURAN RELEASE KE FILE export_presets.cfg
           if [ -f export_presets.cfg ]; then
             sed -i '' 's|keystore/release=".*"|keystore/release="'$HOME'/release.keystore"|g' export_presets.cfg
             sed -i '' 's|keystore/release_user=".*"|keystore/release_user="ponkey"|g' export_presets.cfg
             sed -i '' 's|keystore/release_password=".*"|keystore/release_password="hamidstudio123"|g' export_presets.cfg
           else
-            echo "EROR: File export_presets.cfg tidak ditemukan! Anda harus mengunggah file ini ke Git."
+            echo "EROR: File export_presets.cfg tidak ditemukan di root proyek Anda!"
             exit 1
           fi
 
@@ -60,7 +55,6 @@ workflows:
       - name: Export Android APK (Release Mode)
         script: |
           mkdir -p build/android
-          # Menggunakan path Android SDK yang tepat untuk mengekspor
           godot --headless --path . --export-release "Android" build/android/ponGame-release.apk
 
     artifacts:
